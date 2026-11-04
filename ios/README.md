@@ -32,7 +32,7 @@ Replace `YOUR_SIMULATOR_UDID` with an identifier from the first command. Use a f
 
 The XCTest suite covers origin and path validation, request authentication, JSON body encoding, rejected authentication, error redaction, invalid server responses, redirect refusal, current server payload decoding, and attachment validation. URLProtocol fixtures make these tests independent of a live server or paid provider. The redirect test exercises the delegate's refusal decision; actual TLS and proxy behavior still need device testing.
 
-**Verification status:** this implementation was prepared in a Linux workspace without Swift, Xcode, or an Apple simulator. Property lists, assets, project references, scheme XML, and Swift syntax can be checked there. A successful Xcode build, simulator test run, signed archive, and physical-device test must be established on a Mac; they are not claimed by those static checks.
+**Verification status:** on November 4, 2026, [GitHub Actions run 41882933868](https://github.com/amitwjace-creator/herness/actions/runs/41882933868) successfully built the app, passed its iPhone simulator unit tests, and produced an unsigned Release archive for commit `2854d96752a616b52e353d6020ebbb4e33070eb4` on a Mac runner. The run saved `Herness-unsigned-iphone-archive` and `Herness-iOS-tests` artifacts with seven-day retention. Apple signing, TestFlight distribution, and physical-device testing have not been completed; the unsigned archive cannot be installed directly on an iPhone.
 
 ## Connect the backend
 
