@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   simulator:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,12 @@ jobs:
           raise SystemExit('No available iPhone simulator; install an iOS simulator runtime in Xcode.')
           PY
       - name: Build and run unit tests without signing credentials
+        id: simulator_tests
+        shell: bash
         run: |
+          mkdir -p .build
+          set +e
+          set -o pipefail
           xcodebuild test \
             -project ios/Herness.xcodeproj \
             -scheme Herness \
@@ -52,9 +57,18 @@ jobs:
             -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
             -derivedDataPath .build/ios \
             -resultBundlePath .build/HernessTests.xcresult \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee .build/ios-tests.log
+          build_status=$?
+          set -e
+          printf 'exit_code=%s\n' "$build_status" >> "$GITHUB_OUTPUT"
+          exit "$build_status"
       - name: Build an unsigned iPhone archive
+        id: iphone_archive
+        shell: bash
         run: |
+          mkdir -p .build
+          set +e
+          set -o pipefail
           xcodebuild archive \
             -project ios/Herness.xcodeproj \
             -scheme Herness \
@@ -63,10 +77,109 @@ jobs:
             -derivedDataPath .build/ios-release \
             -archivePath .build/Herness-unsigned.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO 2>&1 | tee .build/ios-archive.log
+          build_status=$?
+          set -e
+          printf 'exit_code=%s\n' "$build_status" >> "$GITHUB_OUTPUT"
+          if [ "$build_status" -ne 0 ]; then
+            exit "$build_status"
+          fi
           ditto -c -k --sequesterRsrc --keepParent \
             .build/Herness-unsigned.xcarchive \
             .build/Herness-unsigned-iphone.xcarchive.zip
+      - name: Report build and test diagnostics
+        if: always()
+        shell: bash
+        env:
+          SIMULATOR_TEST_OUTCOME: ${{ steps.simulator_tests.outcome }}
+          SIMULATOR_TEST_EXIT_CODE: ${{ steps.simulator_tests.outputs.exit_code }}
+          IPHONE_ARCHIVE_OUTCOME: ${{ steps.iphone_archive.outcome }}
+          IPHONE_ARCHIVE_EXIT_CODE: ${{ steps.iphone_archive.outputs.exit_code }}
+        run: |
+          python3 - <<'PY'
+          import html
+          import os
+          import re
+          from pathlib import Path
+
+          stages = [
+              ('Simulator build and tests', '.build/ios-tests.log', 'SIMULATOR_TEST'),
+              ('Unsigned iPhone archive', '.build/ios-archive.log', 'IPHONE_ARCHIVE'),
+          ]
+          ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          failure = re.compile(r'\berror:|\bfatal error:|Test (?:Case|Suite).*\bfailed\b|Testing failed:|\*\* (?:TEST|BUILD|ARCHIVE) FAILED', re.I)
+          location = re.compile(r'^(.*?):(\d+):(?:(\d+):)?\s*(?:fatal )?error:\s*(.*)$')
+          workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+
+          def clean(value):
+              value = ansi.sub('', value)
+              value = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', value).strip()
+              value = re.sub(r'(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*', 'Bearer [redacted]', value)
+              value = re.sub(r'(?i)\b((?:api[_-]?key|pairing[_-]?key|access[_-]?token|secret)\s*[:=]\s*)\S+', r'\1[redacted]', value)
+              return value[:1500]
+
+          def escape(value, property_value=False):
+              value = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              if property_value:
+                  value = value.replace(':', '%3A').replace(',', '%2C')
+              return value
+
+          def annotate(title, line):
+              properties = {'title': title}
+              message = line
+              match = location.match(line)
+              if match:
+                  source = Path(match.group(1))
+                  source = source if source.is_absolute() else workspace / source
+                  try:
+                      relative = source.resolve().relative_to(workspace)
+                  except (ValueError, OSError):
+                      relative = None
+                  if relative is not None:
+                      properties.update(file=str(relative), line=match.group(2))
+                      if match.group(3):
+                          properties['col'] = match.group(3)
+                      message = match.group(4)
+              fields = ','.join(key + '=' + escape(value, True) for key, value in properties.items())
+              print('::error ' + fields + '::' + escape(message))
+
+          summary = ['## iOS build and test results', '', '| Stage | Outcome | xcodebuild pipeline exit |', '| --- | --- | --- |']
+          diagnostics = []
+          test_counts = []
+          for title, log_name, prefix in stages:
+              outcome = os.environ.get(prefix + '_OUTCOME') or 'not run'
+              exit_code = os.environ.get(prefix + '_EXIT_CODE') or 'not recorded'
+              summary.append('| ' + title + ' | ' + outcome + ' | ' + exit_code + ' |')
+              path = Path(log_name)
+              found = []
+              if path.exists():
+                  with path.open(errors='replace') as log:
+                      for raw in log:
+                          line = clean(raw)
+                          if re.search(r'Executed \d+ tests?, with ', line) and line not in test_counts:
+                              test_counts.append(line)
+                          if outcome == 'failure' and failure.search(line) and line not in found:
+                              found.append(line)
+                              if len(found) >= 30:
+                                  break
+              if outcome == 'failure' and not found:
+                  found = ['The stage failed without a recognized compiler/test error line. Inspect its captured log and the step outcome.']
+              diagnostics.extend((title, line) for line in found)
+
+          summary += ['', 'The archive is unsigned. A successful archive does not establish signing, installation, or TestFlight distribution.']
+          if test_counts:
+              summary += ['', '### Reported test counts', '<pre>' + html.escape('\n'.join(test_counts[-4:])) + '</pre>']
+          if diagnostics:
+              selected = diagnostics[:30]
+              summary += ['', '### Compiler and test failures (up to 30)', '<pre>' + html.escape('\n'.join(title + ': ' + line for title, line in selected)) + '</pre>']
+              for title, line in selected:
+                  annotate(title, line)
+          else:
+              summary += ['', 'No failed build/test stage reported a compiler or test diagnostic. Check the stage outcomes above; skipped stages are not passes.']
+          summary += ['', 'Captured build logs and the test result bundle are attached when available.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n'.join(summary) + '\n')
+          PY
       - name: Preserve the unsigned iPhone archive
         uses: actions/upload-artifact@v4
         with:
@@ -79,6 +192,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Herness-iOS-tests
-          path: .build/HernessTests.xcresult
+          path: |
+            .build/HernessTests.xcresult
+            .build/ios-tests.log
+            .build/ios-archive.log
           if-no-files-found: ignore
           retention-days: 7
