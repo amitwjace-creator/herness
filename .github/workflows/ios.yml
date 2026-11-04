@@ -87,6 +87,71 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             .build/Herness-unsigned.xcarchive \
             .build/Herness-unsigned-iphone.xcarchive.zip
+      - name: Package the unsigned device app for personal re-signing
+        id: ipa_package
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          python3 - <<'PY' 2>&1 | tee .build/ios-ipa.log
+          import hashlib
+          import plistlib
+          import stat
+          import struct
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('.build/Herness-unsigned.xcarchive')
+          application = archive / 'Products/Applications/Herness.app'
+          output = Path('.build/Herness-unsigned.ipa')
+          for path in [archive, archive / 'Products', archive / 'Products/Applications', application]:
+              if path.is_symlink() or not path.is_dir():
+                  raise ValueError('Expected a real device archive containing Products/Applications/Herness.app')
+          entries = [application, *sorted(application.rglob('*'))]
+          for path in entries:
+              mode = path.lstat().st_mode
+              if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                  raise ValueError('The app bundle contains a symlink or unsupported special file')
+          info_path = application / 'Info.plist'
+          if not info_path.is_file():
+              raise ValueError('The archived app is missing Info.plist')
+          info = plistlib.loads(info_path.read_bytes())
+          if not isinstance(info, dict):
+              raise ValueError('The archived app has an invalid Info.plist')
+          if info.get('CFBundlePackageType') != 'APPL' or info.get('CFBundleExecutable') != 'Herness':
+              raise ValueError('The archive does not contain the expected Herness application')
+          platforms = info.get('CFBundleSupportedPlatforms', [])
+          if not isinstance(platforms, list) or 'iPhoneOS' not in platforms:
+              raise ValueError('IPA packaging requires the device app, not a simulator build')
+          executable = application / 'Herness'
+          if not executable.is_file() or not executable.stat().st_mode & 0o111:
+              raise ValueError('The archived Herness executable is missing or not executable')
+          with executable.open('rb') as binary:
+              header = binary.read(16)
+          # A generic iOS 17 device archive contains a thin 64-bit arm64 executable.
+          if len(header) != 16 or struct.unpack('<IIII', header)[0:2] != (0xFEEDFACF, 0x0100000C) or struct.unpack('<IIII', header)[3] != 2:
+              raise ValueError('Expected an arm64 Mach-O application executable from the device archive')
+          with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=9, strict_timestamps=False) as package:
+              payload = zipfile.ZipInfo('Payload/')
+              payload.external_attr = ((stat.S_IFDIR | 0o755) << 16) | 0x10
+              package.writestr(payload, b'')
+              for path in entries:
+                  name = Path('Payload/Herness.app') / path.relative_to(application)
+                  package.write(path, name.as_posix())
+          with zipfile.ZipFile(output) as package:
+              names = package.namelist()
+              if package.testzip() is not None or 'Payload/Herness.app/Info.plist' not in names or 'Payload/Herness.app/Herness' not in names:
+                  raise ValueError('The generated IPA failed its archive integrity check')
+              if any(name != 'Payload/' and not name.startswith('Payload/Herness.app/') for name in names):
+                  raise ValueError('The IPA contains an unexpected path outside its Payload')
+          print('Created .build/Herness-unsigned.ipa from the real unsigned device archive.')
+          print('This IPA requires personal or developer re-signing before installation; it has not been installed or signed by CI.')
+          print('SHA-256: ' + hashlib.sha256(output.read_bytes()).hexdigest())
+          PY
+          package_status=$?
+          set -e
+          printf 'exit_code=%s\n' "$package_status" >> "$GITHUB_OUTPUT"
+          exit "$package_status"
       - name: Report build and test diagnostics
         if: always()
         shell: bash
@@ -95,6 +160,8 @@ jobs:
           SIMULATOR_TEST_EXIT_CODE: ${{ steps.simulator_tests.outputs.exit_code }}
           IPHONE_ARCHIVE_OUTCOME: ${{ steps.iphone_archive.outcome }}
           IPHONE_ARCHIVE_EXIT_CODE: ${{ steps.iphone_archive.outputs.exit_code }}
+          IPA_PACKAGE_OUTCOME: ${{ steps.ipa_package.outcome }}
+          IPA_PACKAGE_EXIT_CODE: ${{ steps.ipa_package.outputs.exit_code }}
         run: |
           python3 - <<'PY'
           import html
@@ -105,9 +172,10 @@ jobs:
           stages = [
               ('Simulator build and tests', '.build/ios-tests.log', 'SIMULATOR_TEST'),
               ('Unsigned iPhone archive', '.build/ios-archive.log', 'IPHONE_ARCHIVE'),
+              ('Unsigned IPA packaging', '.build/ios-ipa.log', 'IPA_PACKAGE'),
           ]
           ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
-          failure = re.compile(r'\berror:|\bfatal error:|Test (?:Case|Suite).*\bfailed\b|Testing failed:|\*\* (?:TEST|BUILD|ARCHIVE) FAILED', re.I)
+          failure = re.compile(r'\berror:|\bfatal error:|\b(?:ValueError|OSError|FileExistsError|BadZipFile):|Test (?:Case|Suite).*\bfailed\b|Testing failed:|\*\* (?:TEST|BUILD|ARCHIVE) FAILED', re.I)
           location = re.compile(r'^(.*?):(\d+):(?:(\d+):)?\s*(?:fatal )?error:\s*(.*)$')
           workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
 
@@ -143,7 +211,7 @@ jobs:
               fields = ','.join(key + '=' + escape(value, True) for key, value in properties.items())
               print('::error ' + fields + '::' + escape(message))
 
-          summary = ['## iOS build and test results', '', '| Stage | Outcome | xcodebuild pipeline exit |', '| --- | --- | --- |']
+          summary = ['## iOS build and test results', '', '| Stage | Outcome | Pipeline exit |', '| --- | --- | --- |']
           diagnostics = []
           test_counts = []
           for title, log_name, prefix in stages:
@@ -166,7 +234,7 @@ jobs:
                   found = ['The stage failed without a recognized compiler/test error line. Inspect its captured log and the step outcome.']
               diagnostics.extend((title, line) for line in found)
 
-          summary += ['', 'The archive is unsigned. A successful archive does not establish signing, installation, or TestFlight distribution.']
+          summary += ['', 'The archive and IPA are unsigned. The IPA requires personal or developer re-signing before installation. CI does not establish signing, device installation, or TestFlight distribution.']
           if test_counts:
               summary += ['', '### Reported test counts', '<pre>' + html.escape('\n'.join(test_counts[-4:])) + '</pre>']
           if diagnostics:
@@ -180,7 +248,16 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
               output.write('\n'.join(summary) + '\n')
           PY
+      - name: Preserve the unsigned IPA for personal re-signing
+        if: ${{ always() && steps.ipa_package.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Herness-unsigned-ipa
+          path: .build/Herness-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve the unsigned iPhone archive
+        if: ${{ always() && steps.iphone_archive.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: Herness-unsigned-iphone-archive
@@ -196,5 +273,6 @@ jobs:
             .build/HernessTests.xcresult
             .build/ios-tests.log
             .build/ios-archive.log
+            .build/ios-ipa.log
           if-no-files-found: ignore
           retention-days: 7

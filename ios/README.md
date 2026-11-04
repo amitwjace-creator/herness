@@ -4,6 +4,10 @@ This directory contains a native SwiftUI client and a checked-in Xcode project. 
 
 The native interface covers chat with streamed text through status polling, stopping a turn, reviewing approvals, conversation history, model profiles, selected-file attachments, Knowledge document upload/configuration/indexing/search, and system read-aloud. It does not reproduce every web workspace action. The app includes a clearly labeled, read-only sample conversation. It has no embedded model or standalone offline chat engine; the backend's optional `--demo` mode runs the scripted tool demonstration.
 
+## Free personal installation from Windows
+
+You can install Herness using **AltStore Classic**, a Windows PC and a free Apple ID, without paying for Apple Developer Program membership. Follow the [Windows installation guide](SIDELOAD-WINDOWS.md). AltStore signs the unsigned `.ipa` for your phone; free provisioning expires after seven days and must be refreshed through AltServer. This is separate from TestFlight distribution. The app still needs a reachable Herness backend for live chat.
+
 ## Build on a Mac
 
 Use Xcode 15.4 or newer with an installed iOS simulator runtime. The project uses Swift 5 language mode and the Swift 5.9-or-newer compiler supplied by Xcode. No external Swift packages or project generator are required.

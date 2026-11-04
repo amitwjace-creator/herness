@@ -45,8 +45,11 @@ conversation and agent turn. Use `--demo` for the scripted backend demo.
 The iOS project includes a shared Xcode scheme, unit tests and a macOS CI build
 workflow. The [November 4, 2026 Mac build](https://github.com/amitwjace-creator/herness/actions/runs/41882933868)
 passed its iPhone simulator tests and saved an unsigned iPhone archive.
-Installation through TestFlight requires Apple Developer membership, signing and
-an App Store Connect app record; no signed app or store upload has been produced.
+For personal installation without a paid Apple Developer membership, use
+[AltStore Classic with a Windows PC](ios/SIDELOAD-WINDOWS.md). AltStore signs the
+app with a free Apple ID; it needs refreshing through AltServer every seven days.
+TestFlight distribution requires paid Apple Developer membership, signing and an
+App Store Connect app record; no signed app or store upload has been produced.
 See the [iOS setup and release instructions](ios/README.md).
 
 ## Connect a provider
