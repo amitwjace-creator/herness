@@ -28,7 +28,7 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-Replace `YOUR_SIMULATOR_UDID` with an identifier from the first command. Use a fresh result-bundle path for subsequent runs. `.github/workflows/ios.yml` selects an available iPhone simulator on a macOS runner, builds the app, runs its unit tests, and retains the test result bundle. It neither signs a release nor uploads an app.
+Replace `YOUR_SIMULATOR_UDID` with an identifier from the first command. Use a fresh result-bundle path for subsequent runs. `.github/workflows/ios.yml` selects an available iPhone simulator on a macOS runner, builds the app, runs its unit tests, and retains the test result bundle. After passing tests, it also creates an unsigned iPhone archive and saves it as the `Herness-unsigned-iphone-archive` artifact. That archive still requires Apple signing before installation; the workflow does not sign or upload to TestFlight or the App Store.
 
 The XCTest suite covers origin and path validation, request authentication, JSON body encoding, rejected authentication, error redaction, invalid server responses, redirect refusal, current server payload decoding, and attachment validation. URLProtocol fixtures make these tests independent of a live server or paid provider. The redirect test exercises the delegate's refusal decision; actual TLS and proxy behavior still need device testing.
 

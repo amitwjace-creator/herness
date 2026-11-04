@@ -21,7 +21,7 @@ concurrency:
 jobs:
   simulator:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Show Xcode and simulator availability
@@ -53,6 +53,27 @@ jobs:
             -derivedDataPath .build/ios \
             -resultBundlePath .build/HernessTests.xcresult \
             CODE_SIGNING_ALLOWED=NO
+      - name: Build an unsigned iPhone archive
+        run: |
+          xcodebuild archive \
+            -project ios/Herness.xcodeproj \
+            -scheme Herness \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath .build/ios-release \
+            -archivePath .build/Herness-unsigned.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+          ditto -c -k --sequesterRsrc --keepParent \
+            .build/Herness-unsigned.xcarchive \
+            .build/Herness-unsigned-iphone.xcarchive.zip
+      - name: Preserve the unsigned iPhone archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Herness-unsigned-iphone-archive
+          path: .build/Herness-unsigned-iphone.xcarchive.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve test results
         if: always()
         uses: actions/upload-artifact@v4
