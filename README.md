@@ -43,8 +43,9 @@ page. Run one Herness backend process per workspace; devices share one active
 conversation and agent turn. Use `--demo` for the scripted backend demo.
 
 The iOS project includes a shared Xcode scheme, unit tests and a macOS CI build
-workflow. The [November 4, 2026 Mac build](https://github.com/amitwjace-creator/herness/actions/runs/41882933868)
-passed its iPhone simulator tests and saved an unsigned iPhone archive.
+workflow. The [November 4, 2026 Mac build](https://github.com/amitwjace-creator/herness/actions/runs/41887414583)
+passed its iPhone simulator tests and saved an unsigned iPhone archive and an IPA
+for personal re-signing.
 For personal installation without a paid Apple Developer membership, use
 [AltStore Classic with a Windows PC](ios/SIDELOAD-WINDOWS.md). AltStore signs the
 app with a free Apple ID; it needs refreshing through AltServer every seven days.

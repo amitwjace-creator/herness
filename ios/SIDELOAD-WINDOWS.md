@@ -19,8 +19,8 @@ Enter Apple credentials only in the local installation flow. Do not send your pa
 
 ## Download and install Herness
 
-1. Open the [Herness iOS workflow](https://github.com/amitwjace-creator/herness/actions/workflows/ios.yml?query=branch%3Acodex%2Fnative-iphone-app) and choose a successful run that includes the IPA packaging step.
-2. Download its artifact containing **`Herness-unsigned.ipa`**. GitHub may require you to sign in. Extract the downloaded artifact `.zip`; the file you need is the `.ipa` inside, not an `.xcarchive` or the artifact ZIP itself.
+1. Open the [successful Herness build's artifacts](https://github.com/amitwjace-creator/herness/actions/runs/41887414583#artifacts). This run passed the simulator tests, device archive build and IPA packaging checks on November 4, 2026.
+2. Download **`Herness-unsigned-ipa`**. GitHub requires you to sign in to download Actions artifacts. Extract the downloaded artifact `.zip`; the file you need is **`Herness-unsigned.ipa`** inside, not an `.xcarchive` or the artifact ZIP itself. The build download is retained for seven days, so save a local copy. If it has expired, use a newer successful run of the [iOS workflow](https://github.com/amitwjace-creator/herness/actions/workflows/ios.yml?query=branch%3Acodex%2Fnative-iphone-app).
 3. Put `Herness-unsigned.ipa` in **Files** on your iPhone, for example through iCloud Drive. Keep AltServer running on the PC, with the iPhone connected by USB or on the same Wi-Fi network.
 4. Open **AltStore → My Apps → +**, choose `Herness-unsigned.ipa`, and complete any Apple Account prompts. AltStore signs the app with your personal development certificate and installs it.
 5. Open **Herness** from the Home Screen.
