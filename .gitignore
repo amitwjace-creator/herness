@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.env
+.herness/
+build/
+dist/
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcarchive/
+*.ipa
+.DS_Store

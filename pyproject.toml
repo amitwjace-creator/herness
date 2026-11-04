@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "herness"
+version = "0.4.0"
+description = "A small, inspectable personal AI agent harness"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pypdf>=6.1,<7", "sqlite-vec>=0.1.9,<0.2"]
+
+[project.optional-dependencies]
+documents = ["reportlab>=4,<5"]
+
+[project.scripts]
+herness = "herness.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["herness*"]
+
+[tool.setuptools.package-data]
+herness = ["index.html"]

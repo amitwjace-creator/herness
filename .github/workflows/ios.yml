@@ -1,0 +1,63 @@
+name: iOS build and tests
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode and simulator availability
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ios/Herness.xcodeproj
+          xcrun simctl list devices available
+      - name: Select an available iPhone simulator
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, subprocess
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
+          for runtime in sorted(devices, reverse=True):
+              if '.iOS-' not in runtime:
+                  continue
+              for device in devices[runtime]:
+                  if device.get('isAvailable') and device['name'].startswith('iPhone'):
+                      print('IOS_SIMULATOR_UDID=' + device['udid'])
+                      raise SystemExit(0)
+          raise SystemExit('No available iPhone simulator; install an iOS simulator runtime in Xcode.')
+          PY
+      - name: Build and run unit tests without signing credentials
+        run: |
+          xcodebuild test \
+            -project ios/Herness.xcodeproj \
+            -scheme Herness \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath .build/ios \
+            -resultBundlePath .build/HernessTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Preserve test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Herness-iOS-tests
+          path: .build/HernessTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
